@@ -40,7 +40,28 @@ Terraform 으로 작성된 Iac는 Module화를 기본 전제로 하나의 Module
 
 VPC
 
+main.tf
+
+resource "aws_vpc" "cloud4" {
+  cidr_block       = "192.168.108.0/24"
+  instance_tenancy = "default"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name ="cloudproject-vpc"
+  }
+}
+
+outputs
+aws_vpc.cloud4.id
+
+
 subnet
+
+main
+public_subnet_ids
+db_subnet_ids
 
 igw
 

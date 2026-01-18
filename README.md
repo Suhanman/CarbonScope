@@ -28,5 +28,6 @@ CarbonScope 프로젝트에서의 Role에 대하여
 
 
 
+<img width="1778" height="936" alt="image" src="https://github.com/user-attachments/assets/f7a152cc-8c2a-40df-be9d-2886aeb24662" />
 
 

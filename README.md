@@ -1,9 +1,15 @@
 # CarbonScope (카본스코프)
 
+<img width="2090" height="1153" alt="image" src="https://github.com/user-attachments/assets/7496a0ea-57df-4197-bca4-1c9da22bee5c" />
+
+
+
 > **개발 기간**: 2025.09.15 ~ 2025.11.26  
 > **운영/정리**: 2025.11 ~ 2025.12  
 > **팀원**: 도현직 · 박수한 · 안제현 · 박건우  
 > **담당**: 클라우드 인프라 설계 · 데이터 CronJob 수행 · 데이터 통합/모니터링
+
+<img width="2124" height="1181" alt="image" src="https://github.com/user-attachments/assets/d181b022-92ca-4bbc-8e9f-cd2c84c9fb09" />
 
 ---
 
@@ -16,6 +22,10 @@
 ---
 
 ## 2. 인프라 설계 원칙
+
+
+<img width="1476" height="902" alt="image" src="https://github.com/user-attachments/assets/c49a6736-f72f-427a-b530-06518ccd7c20" />
+
 
 - **IaC**: Terraform으로 인프라 전 리소스 선언/관리  
 - **모듈화**: 각 모듈은 `main.tf / variables.tf / outputs.tf` 구조  
@@ -45,7 +55,10 @@
 
 ---
 
-## 4. 핵심 구현 포인트
+<img width="2033" height="856" alt="image" src="https://github.com/user-attachments/assets/694dc69a-a495-466b-9353-a8a9a07a5fa9" />
+
+
+## 4. CSV -> RDS CronJob
 
 - **Terraform 모듈화**로 네트워크/보안/컴퓨팅/DB/모니터링을 분리하여 재사용성과 유지보수성 확보  
 - **CSV → RDS CronJob** 기반 적재 파이프라인 운영 (통합 데이터 일괄 적재)  
@@ -56,9 +69,12 @@
 
 ---
 
-## 5. 아키텍처 이미지 (선택)
+## 5. 로그 기반 모니터링
 
-> GitHub에서 렌더링되도록 아래처럼 링크를 붙이면 가독성이 좋습니다.
+- **Terraform 모듈화**로 네트워크/보안/컴퓨팅/DB/모니터링을 분리하여 재사용성과 유지보수성 확보  
+- **CSV → RDS CronJob** 기반 적재 파이프라인 운영 (통합 데이터 일괄 적재)  
+- **CloudWatch 로그 기반 관측성 확보**  
+  - Log Group 수집  
+  - Metric Filter로 실패/에러 패턴 카운트  
+  - Alarm 발생 시 SNS 이메일 알림
 
-```markdown
-![architecture](https://github.com/user-attachments/assets/6f89b283-8545-4ccd-858b-5ed37895fed2)

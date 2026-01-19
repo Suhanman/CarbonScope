@@ -38,48 +38,81 @@ Terraform 으로 작성된 Iac는 Module화를 기본 전제로 하나의 Module
 
 본 프로젝트는 웹 구성에 필요한 최소한의 인프라 자원을 사용하는 것을 목표로 하였다.
 
-VPC
+# VPC
 
-main.tf
+main : aws_vpc
+outputs : vpc_id
 
-resource "aws_vpc" "cloud4" {
-  cidr_block       = "192.168.108.0/24"
-  instance_tenancy = "default"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+# subnet
 
-  tags = {
-    Name ="cloudproject-vpc"
-  }
-}
-
-outputs
-aws_vpc.cloud4.id
-
-
-subnet
 
 main
+aws_subnet(public/db)
+
+output 
 public_subnet_ids
 db_subnet_ids
 
-igw
+variable
+vpc_id
 
-route
+# igw
 
-nat
+main
+aws_internet_gateway
 
-sg
+output 
+vpc_id
 
-key
+variable
+vpc_id
 
-instance
+# route
 
-RDS
+main
+aws_route_table (public/private)
+aws_route_table_association
 
-CloudWatch
+variable
+vpc_id
+public_subnet_ids
+igw_id
 
-SNS
+# nat
+main : aws_eip / aws_instance / aws_eip_association
+outputs : nat_id / nat_network_interface_id
+variable : public_subnet_id / vpc_id / nat_sg_id
+
+# sg
+main : aws_security_group(ec2_ssh,http/rds)
+output : rds_sg_id / ec2_sg_id
+variable : vpc_id/public_subnet_ids/public_subnet_cidrs
+
+# key
+main : tls_private_key / aws_key_pair / local_file
+outputs : app_key_name / app_key_public / app_private_key_local_file
+
+# instance
+main : aws_launch_template / aws_instance
+variable : instance_type / public_subnet_ids / app_key_name / ec2_sg_id / app_instance_profile
+
+# RDS
+main : ws_db_subnet_group / aws_db_instance
+variable : db_subnet_ids_list / rds_sg_id / instance_class / db_username / db_password
+
+# CloudWatch
+main : aws_cloudwatch_log_group / aws_cloudwatch_log_metric_filter / aws_cloudwatch_metric_alarm / aws_cloudwatch_metric_alarm
+variable : alerts_topic_arn
+
+# SNS
+main : aws_sns_topic / aws_sns_topic_subscription
+outputs : alerts_topic_(arn / name / email)
+
+# iamrole
+main : aws_iam_role&policy(ec2_s3, cloudwatch_agent), aws_iam_instance_profile
+outputs : app_instance_profile
+
+
 
 
 

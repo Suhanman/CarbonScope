@@ -80,36 +80,46 @@ igw_id
 
 # nat
 main : aws_eip / aws_instance / aws_eip_association
+
 outputs : nat_id / nat_network_interface_id
+
 variable : public_subnet_id / vpc_id / nat_sg_id
 
 # sg
 main : aws_security_group(ec2_ssh,http/rds)
+
 output : rds_sg_id / ec2_sg_id
+
 variable : vpc_id/public_subnet_ids/public_subnet_cidrs
 
 # key
 main : tls_private_key / aws_key_pair / local_file
+
 outputs : app_key_name / app_key_public / app_private_key_local_file
 
 # instance
 main : aws_launch_template / aws_instance
+
 variable : instance_type / public_subnet_ids / app_key_name / ec2_sg_id / app_instance_profile
 
 # RDS
 main : ws_db_subnet_group / aws_db_instance
+
 variable : db_subnet_ids_list / rds_sg_id / instance_class / db_username / db_password
 
 # CloudWatch
 main : aws_cloudwatch_log_group / aws_cloudwatch_log_metric_filter / aws_cloudwatch_metric_alarm / aws_cloudwatch_metric_alarm
+
 variable : alerts_topic_arn
 
 # SNS
 main : aws_sns_topic / aws_sns_topic_subscription
+
 outputs : alerts_topic_(arn / name / email)
 
 # iamrole
 main : aws_iam_role&policy(ec2_s3, cloudwatch_agent), aws_iam_instance_profile
+
 outputs : app_instance_profile
 
 
@@ -117,5 +127,7 @@ outputs : app_instance_profile
 
 
 <img width="1778" height="936" alt="image" src="https://github.com/user-attachments/assets/f7a152cc-8c2a-40df-be9d-2886aeb24662" />
+
+
 
 

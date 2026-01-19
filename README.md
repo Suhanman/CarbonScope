@@ -4,6 +4,7 @@
 
 
 
+
 > **개발 기간**: 2025.09.15 ~ 2025.11.26  
 > **운영/정리**: 2025.11 ~ 2025.12  
 > **팀원**: 도현직 · 박수한 · 안제현 · 박건우  
@@ -90,8 +91,7 @@ credits_df.to_sql(name="credits",  con=engine, if_exists="replace", index=False)
 
 ## 5. 로그 기반 모니터링
 
-데이터 다운로드 -> ec2 안의 CSV와 log 생성 -> S3 업로드
--> CloudWatch Agent 탐지 -> 매트릭 지표 log 탐지 -> 실패/성공 여부의 SNS 알림
+
 
 **로그 그룹 생성**
 ```

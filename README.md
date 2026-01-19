@@ -18,6 +18,7 @@
 1) **AWS 인프라 구축 및 웹/서버 배포** (Terraform IaC, 모듈화 기반)  
 2) **CSV → RDS 적재 CronJob(배치) 구성 및 운영**  
 3) **Batch 로그 기반 모니터링 구축** (CloudWatch Metric Filter + Alarm + SNS)
+4) **CSV와 log의 s3 통합 저장**
 
 ---
 
@@ -41,11 +42,11 @@
 | Module | Purpose (역할) | Main Resources | Key Inputs (variables) | Outputs |
 |---|---|---|---|---|
 | **vpc** | 네트워크 기본 골격 | `aws_vpc` | - | `vpc_id` |
-| **subnet** | Public/DB Subnet 분리 | `aws_subnet` (public/db) | `vpc_id` | `public_subnet_ids`, `db_subnet_ids` |
+| **subnet** | Public/DB Subnet 분리 | `aws_subnet (public/db)` | `vpc_id` | `public_subnet_ids`, `db_subnet_ids` |
 | **igw** | Public 인터넷 연결 | `aws_internet_gateway` | `vpc_id` | `igw_id` |
 | **route** | 라우팅 구성 (public/private) | `aws_route_table`, `aws_route_table_association` | `vpc_id`, `public_subnet_ids`, `igw_id` | (필요 시 route_table_id 등) |
 | **nat** | Private egress 제공 (NAT Instance) | `aws_instance`, `aws_eip`, `aws_eip_association` | `public_subnet_id`, `vpc_id`, `nat_sg_id` | `nat_id`, `nat_network_interface_id` |
-| **sg** | 접근 제어 (EC2/RDS) | `aws_security_group` (ssh/http/rds) | `vpc_id`, `public_subnet_ids`, `public_subnet_cidrs` | `ec2_sg_id`, `rds_sg_id` |
+| **sg** | 접근 제어 (EC2/RDS) | `aws_security_group (ssh/http/rds)` | `vpc_id`, `public_subnet_ids`, `public_subnet_cidrs` | `ec2_sg_id`, `rds_sg_id` |
 | **key** | SSH KeyPair 자동 생성/저장 | `tls_private_key`, `aws_key_pair`, `local_file` | - | `app_key_name`, `app_key_public`, `app_private_key_local_file` |
 | **instance** | 앱 서버 배포 단위 | `aws_launch_template`, `aws_instance` | `instance_type`, `public_subnet_ids`, `app_key_name`, `ec2_sg_id`, `app_instance_profile` | (instance_id, public_ip 등 필요 시) |
 | **rds** | DB 구축 | `aws_db_subnet_group`, `aws_db_instance` | `db_subnet_ids_list`, `rds_sg_id`, `instance_class`, `db_username`, `db_password` | (db_endpoint 등 필요 시) |
@@ -60,21 +61,189 @@
 
 ## 4. CSV -> RDS CronJob
 
-- **Terraform 모듈화**로 네트워크/보안/컴퓨팅/DB/모니터링을 분리하여 재사용성과 유지보수성 확보  
-- **CSV → RDS CronJob** 기반 적재 파이프라인 운영 (통합 데이터 일괄 적재)  
-- **CloudWatch 로그 기반 관측성 확보**  
-  - Log Group 수집  
-  - Metric Filter로 실패/에러 패턴 카운트  
-  - Alarm 발생 시 SNS 이메일 알림
+1. RDS 연결설정
+
+```python
+from sqlalchemy import create_engine
+
+engine = create_engine(
+    f"mysql+pymysql://{RDS_USER}:{RDS_PW}@{RDS_HOST}/{RDS_DB}?charset=utf8mb4",
+    pool_recycle=3600,
+)
+```
+
+2. CSV 파일로드
+   
+```python
+projects_df = pd.read_csv("projects_for_db.csv")
+credits_df  = pd.read_csv("merged_credits.csv")
+```
+3.  RDS로 Insert
+   
+```python
+projects_df.to_sql(name="projects", con=engine, if_exists="replace", index=False)
+credits_df.to_sql(name="credits",  con=engine, if_exists="replace", index=False)
+```
+
 
 ---
 
 ## 5. 로그 기반 모니터링
 
-- **Terraform 모듈화**로 네트워크/보안/컴퓨팅/DB/모니터링을 분리하여 재사용성과 유지보수성 확보  
-- **CSV → RDS CronJob** 기반 적재 파이프라인 운영 (통합 데이터 일괄 적재)  
-- **CloudWatch 로그 기반 관측성 확보**  
-  - Log Group 수집  
-  - Metric Filter로 실패/에러 패턴 카운트  
-  - Alarm 발생 시 SNS 이메일 알림
+데이터 다운로드 -> ec2 안의 CSV와 log 생성 -> S3 업로드
+-> CloudWatch Agent 탐지 -> 매트릭 지표 log 탐지 -> 실패/성공 여부의 SNS 알림
+
+**로그 그룹 생성**
+```
+resource "aws_cloudwatch_log_group" "carbon_log" {
+  name              = "/offsets/carbon_log"
+  retention_in_days = 30
+
+  tags = {
+    Project = "offsets-pipeline"
+  }
+}
+```
+로그는 무기한 저장하지 않고 30일 후 자동삭제된다.
+
+**Failed 감지 필터링**
+```
+resource "aws_cloudwatch_log_metric_filter" "job_failed" {
+  name           = "carbon_unified_job_failed"
+  log_group_name = aws_cloudwatch_log_group.carbon_log.name
+
+  pattern = "JOB_STATUS=FAILED"
+
+  metric_transformation {
+    name      = "CarbonUnifiedJobFailed"
+    namespace = "OffsetsPipeline"
+    value     = "1"
+    unit      = "Count"
+  }
+}
+```
+Log Group 내 로그에 JOB_STATUS=FAILED가 포함되면 OffsetsPipeline / CarbonUnifiedJobFailed 메트릭을 1 증가시킨다.
+
+**Failed 알람**
+```
+resource "aws_cloudwatch_metric_alarm" "job_failed_alarm" {
+  alarm_name          = "carbon-unified-job-failed-alarm"
+  alarm_description   = "Offsets carbon_unified_db2 job FAILED detected in logs."
+  namespace           = "OffsetsPipeline"
+  metric_name         = "CarbonUnifiedJobFailed"
+  statistic           = "Sum"
+  period              = 300          # 5분
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [
+    var.alerts_topic_arn
+  ]
+
+  ok_actions = [
+    var.alerts_topic_arn
+  ]
+}
+```
+5분(300초) 동안 CarbonUnifiedJobFailed가 합계(Sum) 1 이상이면 ALARM.
+
+실패 로그가 한 번이라도 찍히면(필터가 1 카운트) 5분 내에 알람 기능이 작동.
+
+## 6. S3로의 CSV/log 통합
+
+**로그 파일 생성/회전**
+
+```
+LOG_DIR = os.environ.get("APP_LOG_DIR", "/home/ubuntu/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+LOG_PATH = os.path.join(LOG_DIR, "s3_worker.log")
+
+logger = logging.getLogger("s3_worker")
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    file_handler = RotatingFileHandler(
+        LOG_PATH,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8"
+    )
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+```
+**입력/출력 기본 설정 및 유효성 검증**
+
+```
+data_dir = os.environ.get("OUTPUT_DIR", "/home/ubuntu/offsets-data")
+log_dir  = os.environ.get("APP_LOG_DIR", "/home/ubuntu/logs")
+bucket_name = os.environ.get("S3_BUCKET_NAME", "vcm-bucket25")
+
+if not bucket_name:
+    logger.error("S3_BUCKET_NAME 환경변수가 설정되어 있지 않습니다.")
+    sys.exit(1)
+
+if not os.path.isdir(data_dir):
+    logger.error("데이터 디렉터리가 아닙니다: %s", data_dir)
+    sys.exit(1)
+
+if not os.path.isdir(log_dir):
+    logger.error("로그 디렉터리가 아닙니다: %s", log_dir)
+    sys.exit(1)
+```
+
+**저장 경로 규칙 정의**
+
+```
+s3 = boto3.client("s3")
+
+today = datetime.utcnow().strftime("%Y-%m-%d")
+csv_prefix  = os.environ.get("S3_CSV_PREFIX",  f"csv/{today}")
+logs_prefix = os.environ.get("S3_LOG_PREFIX", f"logs/{today}")
+```
+
+**업로드 대상 파일 스캔**
+
+```
+csv_files = [
+    f for f in sorted(os.listdir(data_dir))
+    if f.lower().endswith(".csv")
+    and os.path.isfile(os.path.join(data_dir, f))
+]
+
+log_files = [
+    f for f in sorted(os.listdir(log_dir))
+    if os.path.isfile(os.path.join(log_dir, f))
+]
+```
+**업로드 작업 리스트 구성**
+
+```
+upload_targets = []
+
+for fname in csv_files:
+    local_path = os.path.join(data_dir, fname)
+    s3_key = f"{csv_prefix}/{fname}"
+    upload_targets.append((local_path, s3_key))
+
+for fname in log_files:
+    local_path = os.path.join(log_dir, fname)
+    s3_key = f"{logs_prefix}/{fname}"
+    upload_targets.append((local_path, s3_key))
+```
+**실제 업로드 루프 및 예외 처리**
+
+```
+for local_path, s3_key in upload_targets:
+    try:
+        logger.info("업로드 시작: %s -> s3://%s/%s", local_path, bucket_name, s3_key)
+        s3.upload_file(local_path, bucket_name, s3_key)
+        logger.info("업로드 완료: s3://%s/%s", bucket_name, s3_key)
+    except (BotoCoreError, ClientError) as e:
+        logger.error("업로드 실패: %s -> %s", local_path, e)
+```
 
